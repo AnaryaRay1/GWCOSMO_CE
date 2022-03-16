@@ -1,3 +1,22 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Copyright (C) 2022 Pratyusava Baral Anarya Ray
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+
 from MakeSamples import *
 from scipy.stats import norm,beta
 H0_inj, Om0_inj = 67.7, 0.31
@@ -17,7 +36,7 @@ def get_posterior(H0,Omega_M,M1_Sam,M2_Sam,logD_Sam,Z_Sam,prior_Z,ThetaPrior,th)
 
 if __name__ == "__main__":
     #np.random.seed(1)            
-    NEVENTS = 10000
+    NEVENTS = 5000
     NSAMPLES = 10000
     z_samples = []
     logD_samples = []
@@ -29,7 +48,7 @@ if __name__ == "__main__":
     m,L=np.loadtxt('Mass_Vs_TidalDeformability_SLY.txt',usecols=(0,1),unpack=True)
     m*=1500.
     h=m[1]-m[0]
-    f=h5py.File("E10000ASD50.h5",'r')
+    f=h5py.File("E5000ASD100True.h5",'r')
     for i in range(NEVENTS):
         z_samples.append((np.array(f['z_samples'+str(i)])[:NSAMPLES]))
         logD_samples.append(np.array(f['log_deff_samples'+str(i)])[:NSAMPLES])
@@ -56,4 +75,4 @@ if __name__ == "__main__":
     plt.plot(H0,np.exp(posterior_values-np.max(posterior_values)))
     plt.xlabel('H0')
     plt.axvline(x=H0_inj)
-    plt.savefig('H0_posterior_for_10000_events_w_ASD_by_50')
+    plt.savefig('H0_posterior_for_10000_events_w_ASD_by_100_and_Noise')

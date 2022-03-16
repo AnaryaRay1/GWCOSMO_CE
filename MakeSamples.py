@@ -1,3 +1,23 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Copyright (C) 2022 Pratyusava Baral Anarya Ray
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation; either version 2 of the License, or (at your
+# option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
+# Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+
+
 import numpy as np
 import h5py
 import astropy.cosmology as cos
@@ -5,7 +25,7 @@ from scipy.interpolate import interp2d, interp1d
 from numba import jit
 import matplotlib.pyplot as plt
 
-NEVENTS = 5000
+NEVENTS = 5#000
 MAKE_LIKELIHOOD_SAMPLES = True
 NSAMPLES = 10000
 OPTIMAL = False
@@ -15,7 +35,11 @@ c = 299792458
 c_in_km_per_sec = c/1000#km/s
 MPC_TO_METER = 3.0856775814671914e22
 H0_inj, Om0_inj = 67.7, 0.31
-ASD_SCALE_FACTOR = 1
+ASD_SCALE_FACTOR = 100
+INCLUDE_NOISE_IN_FISHER = False
+M_LOW,M_HIGH,Z_LOW,Z_HIGH = 0.5*1500, 2*1500, 0, 10
+
+
 
 ######################################################################################
 ####### CALCULATE AN ARRAY OF LUMINOSITY DISTANCE GIVEN AN ARRAY OF REDSHIFT #########
@@ -159,12 +183,9 @@ def draw_true(BNSMassDist_mean,BNSMassDist_var,cosmo_true_z_dl_list,z_max=10,a_t
     d_eff=np.interp(z,cosmo_true_z_dl_list[0],cosmo_true_z_dl_list[1])/th
     return m1_true, m2_true, z, d_eff*MPC_TO_METER, th
 
-def get_Fisher(m1_z,m2_z,Lambda_tilde,d_eff,ce_fs,ce_asd):
-    Gamma=Fisher(m1_z,m2_z,Lambda_tilde,d_eff,1.,1.,ce_fs,ce_asd)
-    #print (Gamma[:-2,:-2],'\n',np.linalg.inv(Gamma[:-2,:-2]))
-    return Gamma
     
 if __name__ == "__main__":
+    np.random.seed(10)
     m,L=np.loadtxt('Mass_Vs_TidalDeformability_SLY.txt',usecols=(0,1),unpack=True)
     m*=1500.
     lambdat_from_mass=interp1d(m,L,kind='cubic')
@@ -176,20 +197,34 @@ if __name__ == "__main__":
     zarr=np.linspace(0.0001,10.,1000)
     dLarr=luminosity_distance(zarr,H0_inj,Om0_inj)
     cosmo_true_z_dl_list=np.array([zarr,dLarr])
-    with h5py.File("E"+str(NEVENTS)+"ASD"+str(ASD_SCALE_FACTOR)+".h5", "w") as f:#SNRwoth1000S1e4
+    with h5py.File("E"+str(NEVENTS)+"ASD"+str(ASD_SCALE_FACTOR)+str(INCLUDE_NOISE_IN_FISHER)+".h5", "w") as f:#SNRwoth1000S1e4
         for i in range(NEVENTS):
             m1_true, m2_true, z_true, deff_true, theta_true = draw_true(BNS_POPULATION_MEAN, BNS_POPULATION_SIGMA, cosmo_true_z_dl_list,optimal=OPTIMAL)
             #print (i,z,th)
-            fisher=Fisher(m1_true,m2_true,z_true,deff_true,1,1,lambdat_from_mass,ce_fs,ce_asd)
+            fisher = Fisher(m1_true,m2_true,z_true,deff_true,1,1,lambdat_from_mass,ce_fs,ce_asd)
             snr = SNR(m1_true,m2_true,z_true,deff_true,ce_fs,ce_asd)
-            fisher_reduced, CoV_reduced, peak_reduced = integrate_m1m2(fisher[:-2,:-2], np.array([m1_true, m2_true, z_true, np.log(deff_true)]),BNS_POPULATION_MEAN, BNS_POPULATION_SIGMA,)
+            
+            CoV=np.linalg.inv(fisher[:-2,:-2])
+            if (INCLUDE_NOISE_IN_FISHER):
+                m1_measured, m2_measured, z_measured, log_deff_measured = np.random.multivariate_normal((np.array([m1_true, m2_true, z_true, np.log(deff_true)])),CoV,1).T
+                while m1_measured<M_LOW or m2_measured<M_LOW or m1_measured>M_HIGH or m2_measured>M_HIGH or z_measured<Z_LOW or z_measured>Z_HIGH:
+                    print(1)
+                    m1_measured, m2_measured, z_measured, log_deff_measured = np.random.multivariate_normal((np.array([m1_true, m2_true, z_true, np.log(deff_true)])),CoV,1).T
+                f.create_dataset('measured_parameters'+str(i),data=(np.array([m1_measured, m2_measured, z_measured, log_deff_measured])))
+                fisher = Fisher(m1_measured,m2_measured,z_measured,np.exp(log_deff_measured),1,1,lambdat_from_mass,ce_fs,ce_asd)
+                snr = SNR(m1_true,m2_true,z_true,deff_true,ce_fs,ce_asd)
+            
+                CoV=np.linalg.inv(fisher[:-2,:-2])
+                
+                
+            fisher_reduced, CoV_reduced, peak_reduced = integrate_m1m2(fisher[:-2,:-2], np.array([m1_true, m2_true, z_true, np.log(deff_true)]),BNS_POPULATION_MEAN, BNS_POPULATION_SIGMA)        
             #fisher_reduced, CoV_reduced, peak_reduced = integrate_m1m2_flatmass(fisher[:-2,:-2], np.array([m1_true, m2_true, z, np.log(deff)]))
             print (i,snr,m1_true, m2_true, z_true, theta_true)
             f.create_dataset('injected_parameters'+str(i),data=(np.array([m1_true, m2_true, z_true, np.log(deff_true)])))
             f.create_dataset('snr'+str(i),data=snr)
             f.create_dataset('fisher_matrix'+str(i),data=np.array(fisher))
             f.create_dataset('theta'+str(i),data=theta_true)
-            CoV=np.linalg.inv(fisher[:-2,:-2])
+            
             f.create_dataset('covariance_matrix'+str(i),data=CoV)
             f.create_dataset('reduced_fisher_matrix'+str(i),data=np.array(fisher_reduced))
             f.create_dataset('reduced_covariance_matrix'+str(i),data=CoV_reduced)
